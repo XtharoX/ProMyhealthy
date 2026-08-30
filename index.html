@@ -1,0 +1,379 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MyHealthy</title>
+<script src="https://cdn.tailwindcss.com"></script><script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script><link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet"><style>body{font-family:Kanit,sans-serif}.hide{display:none!important}.tab-active{background:#2563eb;color:#fff}</style></head>
+<body class="bg-slate-100 min-h-screen"><main class="max-w-5xl mx-auto p-5">
+
+<!-- ===================== ONE unified login screen (student/teacher) ===================== -->
+<section id="loginSection" class="max-w-md mx-auto mt-16 bg-white p-8 rounded-3xl shadow-xl">
+  <h1 class="text-3xl font-bold text-blue-600">💙 MyHealthy</h1>
+  <p class="text-slate-500 mb-5">ระบบห้องพยาบาล — เลือกประเภทผู้ใช้แล้วเข้าสู่ระบบได้จากหน้านี้หน้าเดียว</p>
+
+  <div class="flex gap-2 mb-5 bg-slate-100 p-1 rounded-xl">
+    <button id="roleTab-student" onclick="setRole('student')" class="flex-1 p-2 rounded-lg font-semibold bg-white text-slate-500">นักเรียน</button>
+    <button id="roleTab-teacher" onclick="setRole('teacher')" class="flex-1 p-2 rounded-lg font-semibold bg-white text-slate-500">ครู</button>
+  </div>
+
+  <div id="studentLoginForm">
+    <input id="sSid" class="w-full border p-3 rounded-xl mb-3" placeholder="เลขประจำตัวนักเรียน">
+    <input id="sDob" type="date" class="w-full border p-3 rounded-xl mb-4">
+    <button onclick="Student.login()" class="w-full bg-blue-600 text-white p-3 rounded-xl font-bold">เข้าสู่ระบบ (นักเรียน)</button>
+    <p id="sErr" class="text-red-500 mt-3"></p>
+  </div>
+
+  <div id="teacherLoginForm" class="hide">
+    <input id="tUser" class="w-full border p-3 rounded-xl mb-3" placeholder="Username">
+    <input id="tPass" type="password" class="w-full border p-3 rounded-xl mb-3" placeholder="รหัสผ่าน">
+    <input id="tCode" type="password" class="w-full border p-3 rounded-xl mb-4" placeholder="รหัสเข้าใช้งานพิเศษ (Access Code)">
+    <button onclick="Teacher.login()" class="w-full bg-blue-600 text-white p-3 rounded-xl font-bold">เข้าสู่ระบบ (ครู)</button>
+    <p id="tErr" class="text-red-500 mt-3"></p>
+    <p class="text-xs text-slate-400 mt-4">ครั้งแรกให้สร้างบัญชีผ่าน /api/bootstrap-teacher (ต้องตั้งรหัสเข้าใช้งานพิเศษด้วย)</p>
+  </div>
+</section>
+
+<!-- ===================== TEACHER app (unchanged behaviour, ids prefixed t*) ===================== -->
+<section id="tApp" class="hide">
+  <header class="flex justify-between items-center py-4"><div><h1 class="text-3xl font-bold">🏥 ห้องพยาบาล</h1><p class="text-green-600 text-sm">● Real-time Connected</p></div><button onclick="Teacher.logout()" class="text-red-500">ออกจากระบบ</button></header>
+  <div class="flex gap-2 mb-4 flex-wrap">
+    <button id="tTab-PENDING" onclick="Teacher.setFilter('PENDING')" class="bg-white px-4 py-2 rounded-xl">รอประเมิน</button>
+    <button id="tTab-SCHEDULED" onclick="Teacher.setFilter('SCHEDULED')" class="bg-white px-4 py-2 rounded-xl">นัดแล้ว</button>
+    <button id="tTab-ARRIVED" onclick="Teacher.setFilter('ARRIVED')" class="bg-white px-4 py-2 rounded-xl">มาถึงแล้ว</button>
+    <button id="tTab-DONE" onclick="Teacher.setFilter('COMPLETED,REJECTED,CANCELLED')" class="bg-white px-4 py-2 rounded-xl">ปิดแล้ว</button>
+    <button id="tTab-NOTIF" onclick="Teacher.showNotifications()" class="bg-white px-4 py-2 rounded-xl">📨 แจ้งผู้ปกครอง <span id="tNotifBadge" class="hide bg-red-500 text-white text-xs rounded-full px-2">0</span></button>
+    <button id="tTab-MEDS" onclick="Teacher.showMedicines()" class="bg-white px-4 py-2 rounded-xl">💊 คลังยา</button>
+  </div>
+  <div id="tList" class="space-y-4"></div>
+  <div id="tNotifPanel" class="hide space-y-3"></div>
+  <div id="tMedsPanel" class="hide">
+    <div class="bg-white p-5 rounded-2xl shadow mb-4 flex gap-2">
+      <input id="tMedName" class="flex-1 border p-2 rounded-xl" placeholder="ชื่อยา"><input id="tMedDesc" class="flex-1 border p-2 rounded-xl" placeholder="คำอธิบาย (ถ้ามี)">
+      <button onclick="Teacher.addMedicine()" class="bg-blue-600 text-white px-4 rounded-xl">เพิ่มยา</button>
+    </div>
+    <div id="tMedsList" class="space-y-2"></div>
+  </div>
+</section>
+<div id="tModal" onclick="if(event.target===this)closeTeacherModal()" class="hide fixed inset-0 bg-black/50 p-4 flex items-center justify-center"><div class="bg-white w-full max-w-lg p-6 rounded-3xl"><h2 class="text-xl font-bold" id="tMtitle"></h2><div id="tMinfo" class="my-3 p-3 bg-red-50 rounded-xl"></div><div id="tSuggestBox" class="mb-2"></div><textarea id="tAssessment" class="w-full border p-3 rounded-xl mb-2" placeholder="ผลการประเมินเบื้องต้น (ครูตรวจสอบเอง)"></textarea><input id="tWhen" type="datetime-local" class="w-full border p-3 rounded-xl mb-2"><textarea id="tNotes" class="w-full border p-3 rounded-xl mb-2" placeholder="บันทึกครู"></textarea><input id="tMedicine" class="w-full border p-3 rounded-xl mb-1" placeholder="ยาที่จ่าย (ตรวจสอบการแพ้ยาก่อน)"><div id="tMedSuggestBox" class="mb-3 flex flex-wrap"></div><div class="flex gap-2 flex-wrap"><button onclick="Teacher.schedule()" class="flex-1 bg-blue-600 text-white p-3 rounded-xl">นัดหมาย</button><button onclick="Teacher.arrive()" class="flex-1 bg-amber-500 text-white p-3 rounded-xl">มาถึง</button><button onclick="Teacher.complete()" class="flex-1 bg-green-600 text-white p-3 rounded-xl">ปิดเคส</button></div><button onclick="Teacher.rejectCase()" class="w-full mt-2 text-red-500 text-sm">ปิดเคสแบบไม่รับยา (แจ้งเตือนผิด/ซ้ำ)</button><button onclick="closeTeacherModal()" class="w-full mt-2 text-slate-500">ยกเลิก</button></div></div>
+
+<!-- ===================== STUDENT app (unchanged behaviour, ids prefixed s*) ===================== -->
+<section id="sApp" class="hide max-w-xl mx-auto">
+  <header class="flex justify-between items-center py-4"><div><h1 class="text-2xl font-bold">สวัสดี <span id="sName"></span></h1><p id="sClass" class="text-slate-500"></p></div><button onclick="Student.logout()" class="text-red-500">ออกจากระบบ</button></header>
+  <div class="bg-white rounded-3xl p-6 shadow"><h2 class="font-bold text-xl mb-4">แจ้งอาการป่วย</h2><div id="sTags" class="flex flex-wrap gap-2 mb-4"></div>
+    <textarea id="sDetails" class="w-full border rounded-xl p-3" rows="3" placeholder="รายละเอียดเพิ่มเติม"></textarea>
+    <select id="sSeverity" class="w-full border rounded-xl p-3 mt-3"><option value="">เลือกระดับความรุนแรง</option><option>น้อย</option><option>กลาง</option><option>มาก</option></select>
+    <button onclick="Student.send()" class="w-full mt-4 bg-blue-600 text-white p-3 rounded-xl font-bold">ส่งข้อมูลให้ห้องพยาบาล</button></div>
+  <div class="bg-white rounded-3xl p-6 shadow mt-5"><div class="flex justify-between items-center"><h2 class="font-bold text-xl">สถานะล่าสุด</h2><button id="sCancelBtn" onclick="Student.cancelLatest()" class="hide text-sm text-red-500 border border-red-300 px-3 py-1 rounded-full">ยกเลิกคำขอ</button></div><div id="sStatus" class="mt-3 text-slate-500">กำลังโหลด...</div></div>
+  <div class="bg-white rounded-3xl p-6 shadow mt-5"><h2 class="font-bold text-xl mb-2">ประวัติการแจ้ง</h2><div id="sHistory" class="space-y-2 text-sm text-slate-600"></div></div>
+</section>
+
+</main>
+<script>
+// Shared helper used by both roles. Never build innerHTML from raw
+// student/teacher input directly - always run it through esc() first.
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+// Role switcher for the single combined login screen. Each role's markup,
+// state and functions are isolated below (Teacher.* / Student.*) so the two
+// apps can't collide, even though they now live on the same page/DOM.
+function setRole(r){
+  document.getElementById('roleTab-student').classList.toggle('tab-active', r==='student');
+  document.getElementById('roleTab-teacher').classList.toggle('tab-active', r==='teacher');
+  document.getElementById('studentLoginForm').classList.toggle('hide', r!=='student');
+  document.getElementById('teacherLoginForm').classList.toggle('hide', r!=='teacher');
+  localStorage.myhealthy_last_role = r;
+}
+
+// ===================== TEACHER =====================
+const Teacher = (function(){
+  const API='/api';
+  const $=(id)=>document.getElementById(id);
+  let token = localStorage.myhealthy_teacher_token || '';
+  let filter='PENDING', current=null, socket=null, list_cache=[];
+  function h(){return {'Content-Type':'application/json','Authorization':'Bearer '+token}}
+
+  async function login(){
+    $('tErr').textContent='';
+    let r,d;
+    try{
+      r = await fetch(API+'/teacher/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('tUser').value,password:$('tPass').value,accessCode:$('tCode').value})});
+      d = await r.json();
+    }catch(e){ $('tErr').textContent='เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'; return; }
+    if(!r.ok){ $('tErr').textContent=d.error||'เข้าสู่ระบบไม่สำเร็จ'; return; }
+    token=d.token; localStorage.myhealthy_teacher_token=token;
+    start();
+  }
+
+  function start(){
+    $('loginSection').classList.add('hide');
+    $('tApp').classList.remove('hide');
+    setFilter('PENDING');
+    socket = io({auth:{token}});
+    socket.on('queue_update', refreshCurrentView);
+    socket.on('appointment_update', refreshCurrentView);
+    pollNotifBadge();
+  }
+
+  function refreshCurrentView(){
+    if(!$('tNotifPanel').classList.contains('hide')) loadNotifications();
+    else if(!$('tMedsPanel').classList.contains('hide')) loadMedicines();
+    else load();
+    pollNotifBadge();
+  }
+
+  function setActiveTab(id){
+    ['PENDING','SCHEDULED','ARRIVED','DONE','NOTIF','MEDS'].forEach(t=>$('tTab-'+t).classList.remove('tab-active'));
+    $('tTab-'+id).classList.add('tab-active');
+  }
+
+  function setFilter(f){
+    filter=f;
+    $('tList').classList.remove('hide');
+    $('tNotifPanel').classList.add('hide');
+    $('tMedsPanel').classList.add('hide');
+    setActiveTab(f==='PENDING'?'PENDING':f==='SCHEDULED'?'SCHEDULED':f==='ARRIVED'?'ARRIVED':'DONE');
+    load();
+  }
+
+  async function load(){
+    let r,a;
+    try{
+      r = await fetch(API+'/requests?status='+filter,{headers:h()});
+    }catch(e){
+      $('tList').innerHTML = `<div class="p-6 text-center text-red-500 bg-red-50 rounded-2xl">เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ (network error) ตรวจสอบว่าเซิร์ฟเวอร์ยังทำงานอยู่</div>`;
+      return;
+    }
+    if(!r.ok){
+      // Previously this silently returned, leaving the list stuck empty with
+      // no clue why. Surface the real status + backend message instead.
+      let msg='';
+      try{ msg=(await r.json()).error||''; }catch(e){}
+      if(r.status===401){ $('tList').innerHTML = `<div class="p-6 text-center text-red-500 bg-red-50 rounded-2xl">เซสชันหมดอายุหรือไม่ได้รับอนุญาต (401) กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่</div>`; }
+      else { $('tList').innerHTML = `<div class="p-6 text-center text-red-500 bg-red-50 rounded-2xl">โหลดรายการไม่สำเร็จ (HTTP ${r.status}) ${esc(msg)}</div>`; }
+      return;
+    }
+    a = await r.json();
+    list_cache = a;
+    $('tList').innerHTML = a.length ? a.map((x,i)=>`<div class="bg-white p-5 rounded-2xl shadow border-l-8 ${x.severity==='มาก'?'border-red-500':x.severity==='กลาง'?'border-yellow-500':'border-green-500'}"><div class="flex justify-between"><div><b class="text-lg">${esc(x.name)} (${esc(x.class_name)})</b><p>${esc(x.tags.join(', '))}</p><p class="text-slate-500">${esc(x.details||'')}</p><span class="text-sm">ระดับ: ${esc(x.severity)} | ${esc(x.status)}</span></div><button onclick="Teacher.openCase(${i})" class="bg-blue-600 text-white px-4 rounded-xl h-fit">จัดการ</button></div></div>`).join('') : '<div class="p-10 text-center text-slate-400">ไม่มีรายการ (ยังไม่มีนักเรียนแจ้งอาการในสถานะนี้)</div>';
+  }
+
+  async function openCase(i){
+    let x=list_cache[i]; current=x;
+    $('tMtitle').textContent=x.name+' | '+x.student_id;
+    $('tMinfo').innerHTML='<b>⚠️ แพ้ยา:</b> '+esc(x.allergies||'ไม่มีข้อมูล')+'<br><b>อาการ:</b> '+esc(x.tags.join(', '));
+    $('tAssessment').value=x.preliminary_assessment||'';
+    $('tWhen').value=x.appointment_at||'';
+    $('tNotes').value=x.teacher_notes||'';
+    $('tMedicine').value='';
+    $('tSuggestBox').innerHTML='';
+    $('tMedSuggestBox').innerHTML='';
+    $('tModal').classList.remove('hide');
+    if(x.tags.length){
+      let r = await fetch(API+'/diagnose?tags='+encodeURIComponent(x.tags.join(',')),{headers:h()});
+      if(r.ok){
+        let d = await r.json();
+        if(d.assessments.length){
+          $('tSuggestBox').innerHTML='<p class="text-xs text-slate-400 mb-1">คำแนะนำเบื้องต้น (ระบบช่วยประเมิน ไม่ใช่การวินิจฉัย ครูต้องตรวจสอบเอง):</p>'+d.assessments.map(s=>`<button type="button" onclick="Teacher.addSuggestion(this)" class="mr-1 mb-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded-full">+ ${esc(s)}</button>`).join('');
+        }
+      }
+    }
+    // Medicine suggestions from the ยาในคลัง (medicine catalogue) so the
+    // teacher can tap instead of typing the name from memory. This is a
+    // convenience list only, not a prescription engine - a chip is just
+    // flagged red as a rough cross-check against the allergy text on file;
+    // the teacher must still verify before dispensing.
+    let mr = await fetch(API+'/medicines',{headers:h()});
+    if(mr.ok){
+      let meds = await mr.json();
+      let allergyText = (x.allergies||'').toLowerCase().trim();
+      $('tMedSuggestBox').innerHTML = meds.length ? '<p class="text-xs text-slate-400 mb-1 w-full">ยาในคลัง (แตะเพื่อกรอก — ยังต้องตรวจสอบการแพ้ยาเองเสมอ):</p>'+meds.map(m=>{
+        let n=m.medicine_name, risky = allergyText && (allergyText.includes(n.toLowerCase())||n.toLowerCase().includes(allergyText));
+        return `<button type="button" data-name="${esc(n)}" onclick="Teacher.addMedSuggestion(this)" class="mr-1 mb-1 text-xs px-2 py-1 rounded-full border ${risky?'bg-red-50 text-red-700 border-red-300':'bg-green-50 text-green-700 border-green-200'}">${risky?'⚠️ ':''}${esc(n)}</button>`;
+      }).join('') : '<p class="text-xs text-slate-400">ยังไม่มีรายการยาในคลัง — เพิ่มได้ที่แท็บ 💊 คลังยา</p>';
+    }
+  }
+
+  function addSuggestion(btn){
+    let s=btn.textContent.replace(/^\+\s*/,'');
+    $('tAssessment').value = $('tAssessment').value ? $('tAssessment').value+', '+s : s;
+  }
+  function addMedSuggestion(btn){ $('tMedicine').value = btn.dataset.name; }
+
+  async function schedule(){ await action('schedule',{appointmentAt:$('tWhen').value, assessment:$('tAssessment').value, notes:$('tNotes').value}); }
+  async function arrive(){ await action('arrive',{}); }
+  async function rejectCase(){
+    let reason=prompt('เหตุผลที่ปิดเคสโดยไม่รับยา (แจ้งเตือนผิด/ซ้ำ ฯลฯ)','');
+    if(reason===null) return;
+    await action('reject',{reason});
+  }
+  async function complete(){
+    if(!confirm('ยืนยันว่าตรวจสอบการแพ้ยาและจ่ายยาเรียบร้อยแล้ว?')) return;
+    let r = await fetch(`${API}/appointment/${current.appointment_id}/complete`,{method:'POST',headers:h(),body:JSON.stringify({medicines:$('tMedicine').value?[{name:$('tMedicine').value,instruction:''}]:[]})});
+    let d = await r.json();
+    if(r.ok){
+      alert('ปิดเคสแล้ว\nข้อความผู้ปกครองถูกสร้างเพื่อรอการอนุมัติ ดูได้ที่แท็บ "📨 แจ้งผู้ปกครอง":\n'+d.guardianMessage);
+      $('tModal').classList.add('hide'); load(); pollNotifBadge();
+    } else alert(d.error||'ผิดพลาด');
+  }
+  async function action(a,b){
+    let r = await fetch(`${API}/appointment/${current.appointment_id}/${a}`,{method:'POST',headers:h(),body:JSON.stringify(b)});
+    if(r.ok){ $('tModal').classList.add('hide'); load(); } else alert((await r.json()).error||'ผิดพลาด');
+  }
+
+  async function pollNotifBadge(){
+    let r = await fetch(API+'/notifications',{headers:h()});
+    if(!r.ok) return;
+    let n = await r.json();
+    $('tNotifBadge').textContent=n.length;
+    $('tNotifBadge').classList.toggle('hide', n.length===0);
+  }
+  function showNotifications(){
+    $('tList').classList.add('hide'); $('tMedsPanel').classList.add('hide'); $('tNotifPanel').classList.remove('hide');
+    setActiveTab('NOTIF'); loadNotifications();
+  }
+  async function loadNotifications(){
+    let r = await fetch(API+'/notifications',{headers:h()});
+    if(!r.ok){ $('tNotifPanel').innerHTML = `<div class="p-6 text-center text-red-500 bg-red-50 rounded-2xl">โหลดรายการไม่สำเร็จ (HTTP ${r.status})</div>`; return; }
+    let n = await r.json();
+    $('tNotifPanel').innerHTML = n.length ? n.map(x=>`<div class="bg-white p-5 rounded-2xl shadow"><b>${esc(x.name)} (${esc(x.class_name)})</b><p class="text-xs text-slate-400 mb-2">ผู้ปกครอง: ${esc(x.guardian_name||'-')} ${x.guardian_contact?'· '+esc(x.guardian_contact):''}</p><textarea id="tMsg-${x.notification_id}" class="w-full border p-2 rounded-xl mb-2 text-sm">${esc(x.message)}</textarea><div class="flex gap-2"><button onclick="Teacher.approveNotif(${x.notification_id})" class="flex-1 bg-green-600 text-white p-2 rounded-xl">✔ อนุมัติ/ทำเครื่องหมายว่าส่งแล้ว</button><button onclick="Teacher.rejectNotif(${x.notification_id})" class="flex-1 bg-slate-400 text-white p-2 rounded-xl">✕ ไม่ต้องส่ง</button></div></div>`).join('') : '<div class="p-10 text-center text-slate-400 bg-white rounded-2xl">ไม่มีข้อความรอการอนุมัติ</div>';
+    pollNotifBadge();
+  }
+  async function approveNotif(id){
+    let msg = $('tMsg-'+id).value;
+    let r = await fetch(`${API}/notifications/${id}/approve`,{method:'POST',headers:h(),body:JSON.stringify({message:msg})});
+    if(r.ok) loadNotifications(); else alert((await r.json()).error||'ผิดพลาด');
+  }
+  async function rejectNotif(id){
+    let reason=prompt('เหตุผลที่ไม่ส่งข้อความนี้ (ถ้ามี)','');
+    if(reason===null) return;
+    let r = await fetch(`${API}/notifications/${id}/reject`,{method:'POST',headers:h(),body:JSON.stringify({reason})});
+    if(r.ok) loadNotifications(); else alert((await r.json()).error||'ผิดพลาด');
+  }
+
+  function showMedicines(){
+    $('tList').classList.add('hide'); $('tNotifPanel').classList.add('hide'); $('tMedsPanel').classList.remove('hide');
+    setActiveTab('MEDS'); loadMedicines();
+  }
+  async function loadMedicines(){
+    let r = await fetch(API+'/medicines',{headers:h()});
+    if(!r.ok){ $('tMedsList').innerHTML = `<div class="p-6 text-center text-red-500 bg-red-50 rounded-2xl">โหลดรายการไม่สำเร็จ (HTTP ${r.status})</div>`; return; }
+    let m = await r.json();
+    $('tMedsList').innerHTML = m.length ? m.map(x=>`<div class="bg-white p-4 rounded-xl shadow flex justify-between items-center"><div><b>${esc(x.medicine_name)}</b><p class="text-sm text-slate-500">${esc(x.description||'')}</p></div><button onclick="Teacher.deactivateMedicine(${x.medicine_id})" class="text-red-500 text-sm">ลบออกจากคลัง</button></div>`).join('') : '<div class="p-10 text-center text-slate-400 bg-white rounded-2xl">ยังไม่มีรายการยา</div>';
+  }
+  async function addMedicine(){
+    if(!$('tMedName').value.trim()) return;
+    let r = await fetch(API+'/medicines',{method:'POST',headers:h(),body:JSON.stringify({name:$('tMedName').value,description:$('tMedDesc').value})});
+    if(r.ok){ $('tMedName').value=''; $('tMedDesc').value=''; loadMedicines(); } else alert((await r.json()).error||'ผิดพลาด');
+  }
+  async function deactivateMedicine(id){
+    if(!confirm('นำยานี้ออกจากคลัง?')) return;
+    await fetch(`${API}/medicines/${id}/deactivate`,{method:'POST',headers:h()});
+    loadMedicines();
+  }
+
+  async function logout(){
+    await fetch(API+'/logout',{method:'POST',headers:h()});
+    localStorage.removeItem('myhealthy_teacher_token');
+    location.reload();
+  }
+
+  return {login,start,setFilter,openCase,addSuggestion,addMedSuggestion,schedule,arrive,rejectCase,complete,showNotifications,approveNotif,rejectNotif,showMedicines,addMedicine,deactivateMedicine,logout, hasToken:()=>!!token};
+})();
+
+// ===================== STUDENT =====================
+const Student = (function(){
+  const API='/api';
+  const $=(id)=>document.getElementById(id);
+  let token = localStorage.myhealthy_student_token || '';
+  let selected=[], socket=null, latest=null;
+  const symptoms=['ปวดหัว','ตัวร้อน','มีไข้','ปวดท้อง','ท้องเสีย','เจ็บคอ','ไอ','เวียนหัว','ผื่นคัน','บาดเจ็บ/มีแผล'];
+  const STATUS_TH={PENDING:'รอครูตรวจสอบ',SCHEDULED:'นัดหมายแล้ว',ARRIVED:'มาถึงห้องพยาบาลแล้ว',COMPLETED:'เสร็จสิ้น',CANCELLED:'ยกเลิกแล้ว',REJECTED:'ครูปิดเคส (ไม่ใช่การรับยา)'};
+  function headers(){return {'Content-Type':'application/json','Authorization':'Bearer '+token}}
+
+  function renderTags(){
+    $('sTags').innerHTML = symptoms.map(s=>`<button onclick="Student.toggle('${s}')" class="px-3 py-2 rounded-full border ${selected.includes(s)?'bg-blue-600 text-white':''}">${s}</button>`).join('');
+  }
+  function toggle(s){
+    selected.includes(s) ? selected=selected.filter(x=>x!==s) : selected.push(s);
+    renderTags();
+  }
+
+  async function login(){
+    $('sErr').textContent='';
+    let r,d;
+    try{
+      r = await fetch(API+'/student/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({studentId:$('sSid').value,dob:$('sDob').value})});
+      d = await r.json();
+    }catch(e){
+      $('sErr').textContent='เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ตรวจสอบว่าเปิดเซิร์ฟเวอร์ (python app.py) แล้วหรือยัง';
+      return;
+    }
+    if(!r.ok){ $('sErr').textContent=d.error||'เข้าสู่ระบบไม่สำเร็จ'; return; }
+    token=d.token;
+    localStorage.myhealthy_student_token=token;
+    localStorage.myhealthy_student_name=d.name;
+    localStorage.myhealthy_student_class=d.className;
+    start();
+  }
+
+  function start(){
+    $('loginSection').classList.add('hide');
+    $('sApp').classList.remove('hide');
+    $('sName').textContent=localStorage.myhealthy_student_name;
+    $('sClass').textContent=localStorage.myhealthy_student_class;
+    renderTags();
+    load();
+    try{
+      socket = io({auth:{token}});
+      socket.on('appointment_update', load);
+      socket.on('queue_update', load);
+    }catch(e){ console.warn('Real-time connection unavailable:', e); }
+  }
+
+  async function send(){
+    let r = await fetch(API+'/request',{method:'POST',headers:headers(),body:JSON.stringify({tags:selected,details:$('sDetails').value,severity:$('sSeverity').value})});
+    let d = await r.json();
+    if(!r.ok) return alert(d.error||'ส่งไม่สำเร็จ');
+    selected=[]; $('sDetails').value=''; $('sSeverity').value=''; renderTags(); load();
+  }
+
+  async function cancelLatest(){
+    if(!latest || !confirm('ยืนยันยกเลิกคำขอนี้?')) return;
+    let r = await fetch(`${API}/appointment/${latest.appointment_id}/cancel`,{method:'POST',headers:headers()});
+    if(!r.ok){ let d=await r.json(); return alert(d.error||'ยกเลิกไม่สำเร็จ'); }
+    load();
+  }
+
+  async function load(){
+    let r = await fetch(API+'/my/requests',{headers:headers()});
+    if(!r.ok) return;
+    let all = await r.json();
+    latest = all[0];
+    $('sStatus').innerHTML = !latest ? 'ยังไม่มีรายการ' : `<b>${esc(STATUS_TH[latest.status]||latest.status)}</b><br>${latest.appointment_at?'เวลานัด: '+esc(latest.appointment_at):''}<br>${esc(latest.preliminary_assessment||'')}`;
+    $('sCancelBtn').classList.toggle('hide', !latest || latest.status!=='PENDING');
+    $('sHistory').innerHTML = all.slice(0,10).map(a=>`<div class="border-b pb-2"><b>${esc(STATUS_TH[a.status]||a.status)}</b> · ${esc(a.tags.join(', ')||a.details||'-')} <span class="text-xs text-slate-400">${esc(a.created_at)}</span></div>`).join('') || '<p class="text-slate-400">ไม่มีประวัติ</p>';
+  }
+
+  async function logout(){
+    await fetch(API+'/logout',{method:'POST',headers:headers()});
+    localStorage.removeItem('myhealthy_student_token');
+    location.reload();
+  }
+
+  return {login,start,send,cancelLatest,toggle,logout, hasToken:()=>!!token};
+})();
+
+// Always-available way to dismiss the teacher case modal: clicking the dark
+// backdrop, pressing Escape, or the "ยกเลิก" button all call this. It never
+// depends on any API call succeeding first.
+function closeTeacherModal(){ document.getElementById('tModal').classList.add('hide'); }
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeTeacherModal(); });
+
+// ===================== Boot =====================
+// If either role already has a saved session token, skip the login screen
+// entirely and go straight into that app (this is what makes it possible
+// to bookmark one URL instead of two). Otherwise show the login screen
+// with whichever role tab was used last.
+(function(){
+  if(Teacher.hasToken()) Teacher.start();
+  else if(Student.hasToken()) Student.start();
+  else setRole(localStorage.myhealthy_last_role === 'teacher' ? 'teacher' : 'student');
+})();
+</script>
+</body></html>
